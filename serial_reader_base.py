@@ -9,6 +9,10 @@ import pickle as pkl
 import numpy as np
 import json
 
+readout_finished = False
+FPGA_reset = False
+condition = threading.Condition()
+
 # This is a listener set up to run on a thread, allowing for the serial output of the FPGA to be read at any time
 # it needs to be provided with a serial port to listen on, a queue to put data into if you want to act on any of the messages it sends
 # and a queue to put data into if you want to save the data read from the FPGA
@@ -44,8 +48,10 @@ def listen_serial(ser, q, data_q):
 
                 # Check for the data finished code and set the global variable to 1
                 if line[:2] == '32':
-                    readout_finished = 1
-                    print("PYTH: readout finished")
+                    with condition:
+                        readout_finished = True
+                        condition.notify_all()
+                        print("PYTH: readout finished")
 
                 # Check for the FPGA reset code and set the global variable to 1
                 if line[:2] == '06':
@@ -134,7 +140,7 @@ def take_data(number_of_samples,q,ser):
     else:
         print("PYTH: ERR! Not at main menu: {0}", q.get()[:2])
         
-        
+
 def take_data_func(num_trigs,q,data_q,ser,DAC_CH,DAC,folder_name):   
     print("PYTH:sending take data message")
     take_data(num_trigs,q,ser)
@@ -146,11 +152,15 @@ def take_data_func(num_trigs,q,data_q,ser,DAC_CH,DAC,folder_name):
     
     print(f"PYTH:Waiting for {num_trigs},000 trigs or {time_to_wait}s")
     
-    while ((readout_finished != 1) and (time_waited <= time_to_wait)):
-        time.sleep(1)
-        time_waited += 1
+    start_time = time.time()
+
+    with condition:
+        # Wait until readout_finished is set or timeout occurs
+        condition.wait_for(lambda: readout_finished, timeout=program_reset_timer + 1)
     
-    print(f"PYTH: Waited {time_waited} of {time_to_wait}")
+    time_taken = time.time() - start_time
+
+    print(f"PYTH: Waited {time_taken} of {time_to_wait}")
     
     readout = []
     
@@ -179,7 +189,7 @@ def take_data_func(num_trigs,q,data_q,ser,DAC_CH,DAC,folder_name):
     
                 
     print(f"PYTH: Saved {read_count} lines ({read_count/4} events)")
-    return read_count
+    return read_count, time_taken
         
 def close_fpga_SDK(ser):
         

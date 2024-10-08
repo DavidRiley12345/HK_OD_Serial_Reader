@@ -20,6 +20,10 @@ program_reset_timer = 8
 trigger_number_thousand = 7 # in thousands
 folder_name = 'NOISE_SCAN'
 
+readout_finished = False
+FPGA_reset = False
+condition = threading.Condition()
+
 def main():
     # reponse values from FPGA
     # 00: message to user
@@ -69,15 +73,14 @@ def main():
      
     ### NOISE SCAN ###
     for dac_channel in DAC_CHANNELS:
-        FPGA_reset = 0
+        FPGA_reset = False
         
         # initially set all DACs to 0
               
-        while FPGA_reset == 0:
-            print("PYTH:waiting for reset!")
-            time.sleep(1)
-            continue
-        print("PYTH:FPGA reset proceeding")
+        with condition:
+            condition.wait_for(lambda: FPGA_reset)
+
+        print("PYTH:FPGA reset, proceeding")
         print(f"PYTH:taking data")
         
         set_DAC_levels(7,0,ser)
@@ -85,12 +88,12 @@ def main():
         counts = {}
         
         for i in DAC_settings:
-            FPGA_reset = 0
-            readout_finished = 0
-            while FPGA_reset == 0:
-                print("PYTH:waiting for reset!")
-                time.sleep(1)
-                continue
+            FPGA_reset = False
+            readout_finished = False
+            print("PYTH: Waiting for FPGA reset----------------------")
+            with condition:
+                condition.wait_for(lambda: FPGA_reset)
+            print("PYTH:FPGA reset, proceeding")
             print("PYTH: Setting DAC----------------------")
             DAC = i # 0-4095
             CH = dac_channel # 1-6 for individual, 7 for all
@@ -100,7 +103,7 @@ def main():
             
             num_trigs = trigger_number_thousand # in thousands
         
-            read_count_output = take_data_func(num_trigs,q,data_q,ser,CH,DAC,folder_name)
+            read_count_output, time_taken_output = take_data_func(num_trigs,q,data_q,ser,CH,DAC,folder_name)
             
             counts[int(i)] = read_count_output
             
