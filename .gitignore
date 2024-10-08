@@ -1,0 +1,6 @@
+# Ignore __pycache__ directories and all contents
+__pycache__/
+
+# Ignore output directories and all contents
+output/
+
