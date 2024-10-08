@@ -4,7 +4,7 @@ import time
 import threading
 import queue
 import struct
-import tektronix_func_gen as tfg
+#import tektronix_func_gen as tfg
 import pickle as pkl
 import numpy as np
 import json
@@ -13,28 +13,6 @@ pcb_number = 3
 program_reset_timer = 8
 trigger_number_thousand = 7 # in thousands
 folder_name = 'NOISE_SCAN'
-
-
-#def listen_serial(ser,q,data_q):
-#    
-#    global readout_finished
-#    global FPGA_reset
-#
-#    while True:
-#        if ser.in_waiting > 0:
-#            line = ser.readline().decode('utf-8').strip()
-#            if (line[:2] != '22'):
-#                print(f"FPGA:{line}")     #run_time_error while print out the line 
-#            if (line[:2] != '00'):
-#                q.put(line)
-#                if(line[:2] == '22'):
-#                    data_q.put(line)
-#                if(line[:2] == '32'):
-#                    readout_finished = 1
-#                    print("PYTH: readout finished")
-#                if(line[:2] == '06'):
-#                    FPGA_reset = 1
-#                 #
 
 def listen_serial(ser, q, data_q):
     global readout_finished
@@ -186,7 +164,6 @@ def main():
     # 99: failure
     
     #visaRsrcAddr = "USB0::0x0699::0x0357::C020190::INSTR"
-    
 
     #fgen = tfg.FuncGen(visaRsrcAddr,override_compatibility='AFG3022')
     
@@ -203,7 +180,8 @@ def main():
     #func_gen = rm.open_resource(visaRsrcAddr)
     #print(func_gen.query('*IDN?'))
     
-    ser = serial.Serial("COM11",460800,timeout=1)
+    #ser = serial.Serial("COM4",460800,timeout=1)
+    ser = None
     q = queue.LifoQueue()
     data_q = queue.LifoQueue()
 
