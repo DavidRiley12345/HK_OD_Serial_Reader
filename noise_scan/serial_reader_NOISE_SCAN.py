@@ -1,17 +1,16 @@
-import os
 import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from condition_shared import condition, readout_finished, FPGA_reset
 import serial
 import time
 import threading
 import queue
 import struct
-#import tektronix_func_gen as tfg
+import tektronix_func_gen as tfg
 import pickle as pkl
 import numpy as np
 import json
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from serial_reader_base import listen_serial, send_value, handle_messages, func_gen_set_mV, \
     set_DAC_levels, DAC_level_send, take_data, take_data_func, close_fpga_SDK
 
@@ -20,11 +19,8 @@ program_reset_timer = 8
 trigger_number_thousand = 7 # in thousands
 folder_name = 'NOISE_SCAN'
 
-readout_finished = False
-FPGA_reset = False
-condition = threading.Condition()
-
 def main():
+    
     # reponse values from FPGA
     # 00: message to user
     # 01: Main menu
@@ -48,8 +44,8 @@ def main():
     #func_gen = rm.open_resource(visaRsrcAddr)
     #print(func_gen.query('*IDN?'))
     
-    #ser = serial.Serial("COM4",460800,timeout=1)
-    ser = None
+    ser = serial.Serial("COM11",460800,timeout=1)
+    #ser = None
     q = queue.LifoQueue()
     data_q = queue.LifoQueue()
 
@@ -61,8 +57,9 @@ def main():
     print("listener set up")
    
     
-    DAC_settings = np.arange(3800,3931,1)
-        
+    #DAC_settings = np.arange(3800,3931,1)
+    DAC_settings = [3800,4050]
+     
     print("DAC Thresholds :", DAC_settings)
     
      ### Dac Scan ###
@@ -73,27 +70,32 @@ def main():
      
     ### NOISE SCAN ###
     for dac_channel in DAC_CHANNELS:
+        time.sleep(1)
         FPGA_reset = False
         
         # initially set all DACs to 0
-              
+        print("PYTH: waiting for reset all DACs to zero")
         with condition:
-            condition.wait_for(lambda: FPGA_reset)
+            condition.wait()
+        print(f"this should be true: {FPGA_reset}")
 
         print("PYTH:FPGA reset, proceeding")
-        print(f"PYTH:taking data")
+        print(f"PYTH:Setting DAC levels")
         
         set_DAC_levels(7,0,ser)
+        
+        time.sleep(3)
         
         counts = {}
         
         for i in DAC_settings:
             FPGA_reset = False
             readout_finished = False
-            print("PYTH: Waiting for FPGA reset----------------------")
+            print("PYTH: Waiting for FPGA reset to change indiviudal DAC")
             with condition:
-                condition.wait_for(lambda: FPGA_reset)
-            print("PYTH:FPGA reset, proceeding")
+                condition.wait()
+            print(f"PYTH:FPGA reset, proceeding {FPGA_reset}")
+            time.sleep(1)
             print("PYTH: Setting DAC----------------------")
             DAC = i # 0-4095
             CH = dac_channel # 1-6 for individual, 7 for all
@@ -103,9 +105,9 @@ def main():
             
             num_trigs = trigger_number_thousand # in thousands
         
-            read_count_output, time_taken_output = take_data_func(num_trigs,q,data_q,ser,CH,DAC,folder_name)
+            read_count_output, time_taken_output = take_data_func(num_trigs,q,data_q,ser,CH,DAC,folder_name,pcb_number)
             
-            counts[int(i)] = read_count_output
+            counts[int(i)] = [read_count_output,time_taken_output]
             
             print(counts)
             

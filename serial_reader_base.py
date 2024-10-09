@@ -4,14 +4,14 @@ import time
 import threading
 import queue
 import struct
-#import tektronix_func_gen as tfg
+import tektronix_func_gen as tfg
+import sys
 import pickle as pkl
 import numpy as np
 import json
+from condition_shared import condition, readout_finished, FPGA_reset
 
-readout_finished = False
-FPGA_reset = False
-condition = threading.Condition()
+program_reset_timer = 8
 
 # This is a listener set up to run on a thread, allowing for the serial output of the FPGA to be read at any time
 # it needs to be provided with a serial port to listen on, a queue to put data into if you want to act on any of the messages it sends
@@ -33,7 +33,7 @@ def listen_serial(ser, q, data_q):
                 # Skip the line if there's a decoding error
                 print("Skipping line due to decoding error.")
                 continue
-
+            #print(f"FPGAALL:{line}")
             # Process the line if decoding was successful
             # 22 signifies a data message from the FPGA so readout everything else but these
             if line[:2] != '22':
@@ -50,12 +50,21 @@ def listen_serial(ser, q, data_q):
                 if line[:2] == '32':
                     with condition:
                         readout_finished = True
-                        condition.notify_all()
                         print("PYTH: readout finished")
+                        condition.notify_all()
+
+                        
 
                 # Check for the FPGA reset code and set the global variable to 1
                 if line[:2] == '06':
-                    FPGA_reset = 1
+                    with condition:
+                        FPGA_reset = True
+                        time.sleep(1)
+                        print(f"PYTH: FPGA reset {FPGA_reset}")
+                        condition.notify_all()
+                        print(f"notified all waiting threads")
+                        print(FPGA_reset)
+                        
 
 # This function allows a number to be sent to the FPGA over serial
 def send_value(value,ser):
@@ -124,6 +133,16 @@ def DAC_level_send(DAC_lvl,ser):
 def take_data(number_of_samples,q,ser):
     print("PYTH:trying data take")
     
+    global FPGA_reset
+    
+    FPGA_reset = False
+    
+    print("PYTH: waiting for reset in take_data")
+    with condition:
+        condition.wait()
+    print("PYTH: reset recieved in take_data")
+    time.sleep(1)
+    
     # check that the FPGA is at the main menu by seeing if the first two characters of the message are 01
     if (int(q.get()[:2]) == 1):
         print("PYTH:On right menu, sending 2")
@@ -141,26 +160,35 @@ def take_data(number_of_samples,q,ser):
         print("PYTH: ERR! Not at main menu: {0}", q.get()[:2])
         
 
-def take_data_func(num_trigs,q,data_q,ser,DAC_CH,DAC,folder_name):   
+def take_data_func(num_trigs,q,data_q,ser,DAC_CH,DAC,folder_name,pcb_number):   
+    
+    global readout_finished
+    
     print("PYTH:sending take data message")
     take_data(num_trigs,q,ser)
     print("PYTH:sent")
-    
-    time_waited = 0
-    time_to_wait = program_reset_timer + 1 #changed fixed time wait~(program refersh time 8 second +2 second)
+
+    #with condition:
+        # Wait until readout_finished is set or timeout occurs
+    #    condition.wait()
+   
+
+    #time_to_wait = program_reset_timer + 1 #changed fixed time wait~(program refersh time 8 second +2 second)
     #time_to_wait = (num_trigs * 1000 / 100) + 20 # estimated time for a given num of triggers plus a 5 second buffer
     
-    print(f"PYTH:Waiting for {num_trigs},000 trigs or {time_to_wait}s")
+    #print(f"PYTH:Waiting for {num_trigs},000 trigs or {time_to_wait}s")
     
-    start_time = time.time()
-
+    time_start = time.time()
+    
     with condition:
         # Wait until readout_finished is set or timeout occurs
-        condition.wait_for(lambda: readout_finished, timeout=program_reset_timer + 1)
+        condition.wait()
     
-    time_taken = time.time() - start_time
+    time_taken = time.time() - time_start
+    
+    print(f"readout_finished: {readout_finished} FPGA reset: {FPGA_reset}")
 
-    print(f"PYTH: Waited {time_taken} of {time_to_wait}")
+    print(f"PYTH: Waited {time_taken}")
     
     readout = []
     
@@ -170,7 +198,7 @@ def take_data_func(num_trigs,q,data_q,ser,DAC_CH,DAC,folder_name):
     readout_reordered = readout[::-1]
     
     read_count = 0
-    trigger_number = trigger_number_thousand * 1000
+    trigger_number = num_trigs * 1000
     #create new folder location
     subfolder_name = ( "pcb" + str(pcb_number)+ "_ch" + str(DAC_CH) + "_" + str(trigger_number) )
     new_folder = 'output/' + folder_name + "/" + subfolder_name
